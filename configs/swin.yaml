@@ -1,0 +1,59 @@
+model:
+  name: swin_base_patch4_window7_224
+  pretrained: true
+  num_classes: 2
+  drop_rate: 0.4
+  head_hidden_dim: 512
+
+data:
+  image_size: 384
+  resize_size: 512
+  batch_size: 16
+  num_workers: 4
+  artists:
+    - turner
+    - constable
+
+training:
+  # Phase 1: warm-up classifier only
+  phase1_epochs: 5
+  phase1_lr: 1.0e-3
+
+  # Phase 2: full fine-tuning with differential LRs
+  phase2_epochs: 40
+  phase2_lr_head: 1.0e-4
+  phase2_lr_late_stages: 5.0e-5
+  phase2_lr_early_stages: 1.0e-5
+
+  # Phase 3: polish at very low LR
+  phase3_epochs: 10
+  phase3_lr_factor: 0.1
+
+  optimizer: adamw
+  weight_decay: 0.01
+  grad_clip: 1.0
+  accumulate_grad_batches: 4
+
+  # LR scheduler
+  scheduler: cosine_warm_restarts
+  T_0: 10
+  T_mult: 2
+
+  # Regularization
+  label_smoothing: 0.1
+  mixup_alpha: 0.4
+
+  # Early stopping (monitors val AUC-ROC)
+  early_stop_patience: 10
+
+  seed: 42
+
+checkpoints:
+  dir: checkpoints
+  save_top_k: 3
+  monitor: val_auc
+
+logging:
+  use_wandb: false
+  project: turner-or-constable
+  log_dir: logs

@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+
+# Data (large files)
+data/raw/
+data/processed/
+checkpoints/
+logs/
+*.pth
+*.pt
+*.ckpt
+
+# Notebooks output
+.ipynb_checkpoints/
+
+# WandB
+wandb/
+
+# IDE
+.vscode/
+.idea/

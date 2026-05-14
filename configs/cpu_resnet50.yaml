@@ -1,0 +1,56 @@
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: 2
+  drop_rate: 0.4
+  head_hidden_dim: 256
+
+data:
+  image_size: 224
+  resize_size: 256
+  batch_size: 16
+  num_workers: 0
+  artists:
+    - turner
+    - constable
+
+training:
+  # Phase 1: warm-up classifier head only (backbone frozen)
+  phase1_epochs: 8
+  phase1_lr: 5.0e-4
+
+  # Phase 2: full fine-tuning — small dataset needs strong regularization
+  phase2_epochs: 30
+  phase2_lr_head: 2.0e-4
+  phase2_lr_late_stages: 5.0e-5
+  phase2_lr_early_stages: 1.0e-5
+
+  # Phase 3: final polish
+  phase3_epochs: 10
+  phase3_lr_factor: 0.1
+
+  optimizer: adamw
+  weight_decay: 0.05   # stronger regularization for small dataset
+  grad_clip: 1.0
+  accumulate_grad_batches: 2   # effective batch = 32
+
+  scheduler: cosine_warm_restarts
+  T_0: 10
+  T_mult: 2
+
+  label_smoothing: 0.1
+  mixup_alpha: 0.4
+
+  early_stop_patience: 12
+
+  seed: 42
+
+checkpoints:
+  dir: checkpoints
+  save_top_k: 3
+  monitor: val_auc
+
+logging:
+  use_wandb: false
+  project: turner-or-constable
+  log_dir: logs
