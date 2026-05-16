@@ -2,7 +2,7 @@
 
 A binary image classifier that distinguishes paintings by **J.M.W. Turner** from those by **John Constable**. Both were early-19th-century British landscape painters working simultaneously — the model can't rely on subject matter and has to learn actual stylistic differences: Turner's atmospheric haze and luminous, almost dissolved light versus Constable's grounded palette and detailed naturalistic foliage.
 
-The dataset is small (~317 images), the classes are imbalanced 2.4:1, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
+The dataset is small (~338 images), the classes are imbalanced 2.7:1, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
 
 ---
 
@@ -12,13 +12,13 @@ Trained on a ResNet50 backbone, CPU-only (Intel i5-1135G7):
 
 | Metric | Score |
 |---|---|
-| Test accuracy | 68.75% |
-| Test AUC-ROC | 0.889 |
-| F1 — Turner | 0.727 |
-| F1 — Constable | 0.634 |
-| Best val AUC (training) | 0.941 |
+| Test accuracy | 66.67% |
+| Test AUC-ROC | 0.898 |
+| F1 — Turner | 0.712 |
+| F1 — Constable | 0.605 |
+| Best val AUC (training) | 0.932 |
 
-Test set: 48 held-out images (34 Turner, 14 Constable). Constable recall was strong — 13 of 14 correct — while Turner proved harder due to his wider range across periods and subjects.
+Test set: 51 held-out images (37 Turner, 14 Constable). Constable recall was strong — 13 of 14 correct — while Turner proved harder due to his wider range across periods and subjects.
 
 ---
 
