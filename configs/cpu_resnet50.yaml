@@ -2,12 +2,12 @@ model:
   name: resnet50
   pretrained: true
   num_classes: 2
-  drop_rate: 0.4
+  drop_rate: 0.3
   head_hidden_dim: 256
 
 data:
   image_size: 224
-  resize_size: 256
+  resize_size: 320
   batch_size: 16
   num_workers: 0
   artists:
@@ -19,8 +19,8 @@ training:
   phase1_epochs: 8
   phase1_lr: 5.0e-4
 
-  # Phase 2: full fine-tuning — small dataset needs strong regularization
-  phase2_epochs: 30
+  # Phase 2: full fine-tuning — with more data, less regularization needed
+  phase2_epochs: 40
   phase2_lr_head: 2.0e-4
   phase2_lr_late_stages: 5.0e-5
   phase2_lr_early_stages: 1.0e-5
@@ -30,7 +30,7 @@ training:
   phase3_lr_factor: 0.1
 
   optimizer: adamw
-  weight_decay: 0.05   # stronger regularization for small dataset
+  weight_decay: 0.03
   grad_clip: 1.0
   accumulate_grad_batches: 2   # effective batch = 32
 
@@ -39,9 +39,9 @@ training:
   T_mult: 2
 
   label_smoothing: 0.1
-  mixup_alpha: 0.4
+  mixup_alpha: 0.3
 
-  early_stop_patience: 12
+  early_stop_patience: 15
 
   seed: 42
 

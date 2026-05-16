@@ -42,8 +42,16 @@ def get_transforms(split: str, image_size: int = 384, resize_size: int = 512) ->
     to_tensor = ToTensorV2()
 
     if split == "train":
+        # Randomly resize before crop so the model sees both fine brushwork
+        # (large image → tight 224px crop) and overall composition
+        # (small image → wide 224px crop covering most of the painting)
+        scale_choices = [
+            A.SmallestMaxSize(max_size=image_size + 32),   # ~90% coverage per crop
+            A.SmallestMaxSize(max_size=resize_size),        # ~70% coverage
+            A.NoOp(),                                       # full 512px, ~44% coverage
+        ]
         return A.Compose([
-            # Random crop from the pre-resized 512px image
+            A.OneOf(scale_choices, p=1.0),
             A.RandomCrop(height=image_size, width=image_size),
             # Geometry — appropriate for paintings
             A.HorizontalFlip(p=0.5),
