@@ -88,9 +88,21 @@ def extract_split(
     return np.concatenate(feats), np.concatenate(labels)
 
 
+def dataset_fingerprint(data_dir: str) -> str:
+    """Hash of every split's file list, so a re-split invalidates the cache."""
+    import hashlib
+    h = hashlib.md5()
+    for split in ("train", "val", "test"):
+        ds = ArtDataset(data_dir, split, transform=get_transforms("val", 224))
+        for p, label in ds.samples:
+            h.update(f"{split}/{label}/{p.name}".encode())
+    return h.hexdigest()
+
+
 def extract_all(args, device: torch.device) -> dict[str, np.ndarray]:
     cache = Path(args.checkpoint_dir) / args.name / "features.npz"
-    meta = {"backbone": args.backbone, "image_size": args.image_size, "train_views": args.train_views}
+    meta = {"backbone": args.backbone, "image_size": args.image_size,
+            "train_views": args.train_views, "data": dataset_fingerprint(args.data_dir)}
 
     if cache.exists():
         data = np.load(cache, allow_pickle=True)

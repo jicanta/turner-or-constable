@@ -2,26 +2,33 @@
 
 A binary image classifier that distinguishes paintings by **J.M.W. Turner** from those by **John Constable**. Both were early-19th-century British landscape painters working simultaneously — the model can't rely on subject matter and has to learn actual stylistic differences: Turner's atmospheric haze and luminous, almost dissolved light versus Constable's grounded palette and detailed naturalistic foliage.
 
-The dataset is 2,081 deduplicated paintings (1,090 Turner / 991 Constable) scraped from WikiArt and the full Wikimedia Commons category trees, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
+The dataset is 2,079 deduplicated paintings (1,089 Turner / 990 Constable) scraped from WikiArt and the full Wikimedia Commons category trees, with a leakage-audited train/val/test split, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
 
 ---
 
 ## Results
 
-Best model: a **DINOv2 ViT-S/14 feature probe** — frozen self-supervised backbone, classification head trained on cached features (see `src/training/probe.py`). Trained CPU-only (Intel i5-1135G7) in ~40 minutes, most of which is one-time feature extraction.
+Best model: a **DINOv2 ViT-S/14 feature probe** — frozen self-supervised backbone, classification head trained on cached features (see `src/training/probe.py`). Trained CPU-only (Intel i5-1135G7) in ~40 minutes, most of which is one-time feature extraction. All numbers below are on the leakage-audited split (see next section).
 
 | Metric | Score |
 |---|---|
-| Test accuracy (flip-TTA) | **94.57%** |
-| Test accuracy (single view) | 93.93% |
-| Test AUC-ROC | 0.986 |
-| F1 — Turner | 0.948 |
-| F1 — Constable | 0.943 |
-| Best val AUC (training) | 0.984 |
+| Test accuracy (flip-TTA) | **91.64%** |
+| Test AUC-ROC | 0.975 |
+| F1 — Turner | 0.920 |
+| F1 — Constable | 0.912 |
+| Best val AUC (training) | 0.983 |
 
-Test set: 313 held-out images (164 Turner, 149 Constable). Confusion matrix (flip-TTA): 155/164 Turner and 141/149 Constable correct.
+Test set: 311 held-out images (163 Turner, 148 Constable). Confusion matrix (flip-TTA): 150/163 Turner and 135/148 Constable correct.
 
-Comparison on the same 313-image test set — a ResNet50 fully fine-tuned on the expanded dataset (3-phase schedule, ~4h on CPU) reaches 92.33% accuracy / 0.976 AUC, so the DINOv2 probe wins while training ~10x faster. The previous release (same ResNet50 recipe on the original ~338-image dataset) scored 66.7% / 0.898 on its 51-image test set — most of the overall jump comes from ~6x more training data with near-balanced classes, plus the switch to frozen DINOv2 features, which can't overfit a dataset this size the way a fully fine-tuned network can.
+For scale: the previous release — the same kind of ResNet50 fine-tune on the original ~338-image dataset — scored 66.7% accuracy / 0.898 AUC on its 51-image test set. Most of the jump comes from ~6x more training data with near-balanced classes, plus the switch to frozen DINOv2 features, which can't overfit a dataset this size the way a fully fine-tuned network can.
+
+### Leakage audit
+
+Wikimedia Commons often hosts several *different photographs of the same painting* (a framed gallery shot and a direct reproduction, different color grading), and Constable in particular repainted the same composition multiple times. pHash deduplication does not catch these, so a naive random split lets near-duplicates straddle train/test and inflate test metrics.
+
+`src/data/grouped_split.py` audits and fixes this: it computes a DINOv2 feature per image, unions images with cosine similarity ≥ 0.92 into groups (threshold picked by visually inspecting ranked cross-split pairs — above it, pairs are the same painting or near-identical variants; below it, distinct works), drops groups whose members carry both artists' labels (in practice: one Flickr photo of a National Gallery room that sat in both category trees), and re-splits 70/15/15 at group granularity so every near-duplicate cluster lands entirely in one split. The audit report is written to `data/leakage_audit.json`.
+
+Measured effect: the probe scored **94.6%** accuracy / 0.986 AUC on the naive split vs. **91.6%** / 0.975 on the grouped split — i.e. cross-split near-duplicates were worth about 3 accuracy points. The number above is the honest one.
 
 ---
 
@@ -40,6 +47,7 @@ turner-or-constable/
 │   │   ├── scrape_commons.py       # Wikimedia Commons scraper (recursive category walk)
 │   │   ├── download.py             # HuggingFace huggan/wikiart alternative
 │   │   ├── preprocess.py           # Quality filter, dedup, resize, stratified split
+│   │   ├── grouped_split.py        # Leakage audit + near-duplicate-safe re-split
 │   │   └── dataset.py              # PyTorch Dataset + albumentations pipelines
 │   ├── models/
 │   │   └── classifier.py           # ArtClassifier, EnsembleModel, differential LR groups
@@ -109,6 +117,13 @@ python src/data/preprocess.py
 ```
 
 Optional flags: `--target-size 512 --min-size 224 --phash-threshold 10 --seed 42`
+
+Then make the split leakage-safe (groups near-duplicate photos/versions of the same painting onto one side of the split — see the Leakage audit section):
+
+```bash
+python src/data/grouped_split.py --threshold 0.92 --dry-run   # inspect first
+python src/data/grouped_split.py --threshold 0.92
+```
 
 ### 3. Train
 

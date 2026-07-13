@@ -1,0 +1,26 @@
+{
+  "threshold": 0.92,
+  "images": 2081,
+  "groups": 1944,
+  "multi_image_groups": 92,
+  "largest_group": 18,
+  "dropped_mixed_label": [
+    "commons_turner_c65adc8ea4f5.jpg",
+    "commons_constable_c65adc8ea4f5.jpg"
+  ],
+  "moved": 993,
+  "split_counts": {
+    "train": {
+      "turner": 762,
+      "constable": 693
+    },
+    "val": {
+      "turner": 164,
+      "constable": 149
+    },
+    "test": {
+      "turner": 163,
+      "constable": 148
+    }
+  }
+}
