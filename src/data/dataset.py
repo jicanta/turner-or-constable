@@ -67,8 +67,11 @@ def get_transforms(split: str, image_size: int = 384, resize_size: int = 512) ->
             to_tensor,
         ])
     else:
-        # Val / test: deterministic center crop
+        # Val / test: resize so shorter side == image_size, then center crop.
+        # Without the resize the crop covers only ~20% of a 512px processed
+        # image's area (and fails outright when image_size > 512).
         return A.Compose([
+            A.SmallestMaxSize(max_size=image_size),
             A.CenterCrop(height=image_size, width=image_size),
             normalize,
             to_tensor,

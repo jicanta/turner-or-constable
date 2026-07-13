@@ -2,23 +2,26 @@
 
 A binary image classifier that distinguishes paintings by **J.M.W. Turner** from those by **John Constable**. Both were early-19th-century British landscape painters working simultaneously — the model can't rely on subject matter and has to learn actual stylistic differences: Turner's atmospheric haze and luminous, almost dissolved light versus Constable's grounded palette and detailed naturalistic foliage.
 
-The dataset is small (~338 images), the classes are imbalanced 2.7:1, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
+The dataset is 2,081 deduplicated paintings (1,090 Turner / 991 Constable) scraped from WikiArt and the full Wikimedia Commons category trees, and the visual boundary is genuinely ambiguous in many cases. That's the interesting part.
 
 ---
 
 ## Results
 
-Trained on a ResNet50 backbone, CPU-only (Intel i5-1135G7):
+Best model: a **DINOv2 ViT-S/14 feature probe** — frozen self-supervised backbone, classification head trained on cached features (see `src/training/probe.py`). Trained CPU-only (Intel i5-1135G7) in ~40 minutes, most of which is one-time feature extraction.
 
 | Metric | Score |
 |---|---|
-| Test accuracy | 66.67% |
-| Test AUC-ROC | 0.898 |
-| F1 — Turner | 0.712 |
-| F1 — Constable | 0.605 |
-| Best val AUC (training) | 0.932 |
+| Test accuracy (flip-TTA) | **94.57%** |
+| Test accuracy (single view) | 93.93% |
+| Test AUC-ROC | 0.986 |
+| F1 — Turner | 0.948 |
+| F1 — Constable | 0.943 |
+| Best val AUC (training) | 0.984 |
 
-Test set: 51 held-out images (37 Turner, 14 Constable). Constable recall was strong — 13 of 14 correct — while Turner proved harder due to his wider range across periods and subjects.
+Test set: 313 held-out images (164 Turner, 149 Constable). Confusion matrix (flip-TTA): 155/164 Turner and 141/149 Constable correct.
+
+Comparison on the same 313-image test set — a ResNet50 fully fine-tuned on the expanded dataset (3-phase schedule, ~4h on CPU) reaches 92.33% accuracy / 0.976 AUC, so the DINOv2 probe wins while training ~10x faster. The previous release (same ResNet50 recipe on the original ~338-image dataset) scored 66.7% / 0.898 on its 51-image test set — most of the overall jump comes from ~6x more training data with near-balanced classes, plus the switch to frozen DINOv2 features, which can't overfit a dataset this size the way a fully fine-tuned network can.
 
 ---
 
@@ -34,13 +37,15 @@ turner-or-constable/
 ├── src/
 │   ├── data/
 │   │   ├── scrape_wikiart.py       # Direct WikiArt JSON API scraper
+│   │   ├── scrape_commons.py       # Wikimedia Commons scraper (recursive category walk)
 │   │   ├── download.py             # HuggingFace huggan/wikiart alternative
 │   │   ├── preprocess.py           # Quality filter, dedup, resize, stratified split
 │   │   └── dataset.py              # PyTorch Dataset + albumentations pipelines
 │   ├── models/
 │   │   └── classifier.py           # ArtClassifier, EnsembleModel, differential LR groups
 │   ├── training/
-│   │   ├── train.py                # 3-phase training loop
+│   │   ├── train.py                # 3-phase fine-tuning loop
+│   │   ├── probe.py                # DINOv2 frozen-feature probe (best model)
 │   │   ├── losses.py               # Label smoothing CE + Focal loss
 │   │   └── metrics.py              # AUC-ROC, F1, confusion matrix, MetricsAccumulator
 │   └── inference/
@@ -73,15 +78,21 @@ Python 3.10+ recommended. Training was done on CPU; a GPU will speed up Phases 2
 
 ### 1. Get the data
 
-Two options, depending on what you have access to:
+Three options, depending on what you have access to:
 
-**Option A — WikiArt scraper** (direct, no HuggingFace account needed):
+**Option A — Wikimedia Commons scraper** (recommended; where most of the current dataset comes from):
+```bash
+python src/data/scrape_commons.py --max-per-artist 1200 --output-dir data/raw
+```
+Recursively walks the full `Paintings by …` category trees (by-museum / by-location / by-title subcategories hold most of the files), filters out engravings, prints, and cropped details by title, and downloads 1024px thumbnails with polite rate-limiting.
+
+**Option B — WikiArt scraper** (direct, no HuggingFace account needed):
 ```bash
 python src/data/scrape_wikiart.py --max-per-artist 400 --output-dir data/raw
 ```
 Fetches from WikiArt's public JSON API. Polite rate-limiting (150ms between requests) is built in.
 
-**Option B — HuggingFace dataset** (slower first run, more complete):
+**Option C — HuggingFace dataset** (slower first run, more complete):
 ```bash
 python src/data/download.py --output-dir data/raw --max-per-artist 2000
 ```
@@ -101,11 +112,18 @@ Optional flags: `--target-size 512 --min-size 224 --phash-threshold 10 --seed 42
 
 ### 3. Train
 
+**Option A — DINOv2 feature probe** (recommended; best accuracy, CPU-friendly):
+```bash
+python src/training/probe.py --train-views 4 --image-size 336
+```
+Extracts frozen DINOv2 ViT-S/14 features once (cached to `checkpoints/dinov2_probe/features.npz`), sweeps head hyperparameters on val AUC, evaluates on test with flip-TTA, and exports a standard `ArtClassifier` checkpoint to `checkpoints/dinov2_probe/best.pth` — fully compatible with `evaluate_test.py`, `predict.py`, and `app.py`.
+
+**Option B — full fine-tuning**:
 ```bash
 python src/training/train.py --config configs/cpu_resnet50.yaml
 ```
 
-Training runs in three phases:
+Fine-tuning runs in three phases:
 
 | Phase | Epochs | What trains | Learning rate |
 |---|---|---|---|
@@ -124,10 +142,10 @@ python src/training/train.py --config configs/cpu_resnet50.yaml --resume checkpo
 
 ```bash
 python evaluate_test.py \
-    --checkpoint checkpoints/resnet50/best.pth \
-    --model-name resnet50 \
+    --checkpoint checkpoints/dinov2_probe/best.pth \
+    --model-name vit_small_patch14_reg4_dinov2.lvd142m \
     --data-dir data/processed \
-    --image-size 224
+    --image-size 336
 ```
 
 Prints accuracy, AUC-ROC, per-class F1, and the full confusion matrix.
@@ -135,7 +153,8 @@ Prints accuracy, AUC-ROC, per-class F1, and the full confusion matrix.
 ### 5. Run the demo
 
 ```bash
-python app.py --checkpoint checkpoints/resnet50/best.pth --model-name resnet50 --image-size 224
+python app.py --checkpoint checkpoints/dinov2_probe/best.pth \
+    --model-name vit_small_patch14_reg4_dinov2.lvd142m --image-size 336
 ```
 
 Opens a Gradio interface at `http://localhost:7860`. Upload any painting to get a prediction, confidence scores, and an optional Grad-CAM heatmap showing which regions drove the classification.
@@ -156,11 +175,12 @@ backbone (ResNet50 / EfficientNet-B4 / Swin-Base)
     → Linear(head_hidden_dim → 2)
 ```
 
-Three backbones are configured out of the box:
+Backbones in use:
 
-- **ResNet50** (`cpu_resnet50.yaml`) — fast on CPU, reasonable baseline
+- **DINOv2 ViT-S/14** (`probe.py`, default) — frozen self-supervised features + trained head; best accuracy and can't overfit a dataset this size. ViT backbones are created with `dynamic_img_size=True` so any input resolution works.
+- **ResNet50** (`cpu_resnet50.yaml`) — fast fine-tuning baseline on CPU
 - **EfficientNet-B4** (`efficientnet.yaml`) — better convolutional baseline
-- **Swin-Transformer-Base** (`swin.yaml`) — best for fine-grained style classification; shifted-window attention captures both local brushstroke texture and global composition; needs a GPU to be practical
+- **Swin-Transformer-Base** (`swin.yaml`) — fine-grained fine-tuning option; needs a GPU to be practical
 
 The differential LR split for fine-tuning (Phase 2) is architecture-aware: for Swin it uses `patch_embed` + first two stages as "early" and stages 2–3 + norm as "late". ResNet and EfficientNet fall back to a layer-prefix heuristic.
 

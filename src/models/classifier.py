@@ -45,12 +45,22 @@ class ArtClassifier(nn.Module):
         super().__init__()
         self.backbone_name = backbone_name
 
-        # Create backbone without its classifier head
-        self.backbone = timm.create_model(
-            backbone_name,
-            pretrained=pretrained,
-            num_classes=0,  # removes the default head
-        )
+        # Create backbone without its classifier head. ViT backbones get
+        # dynamic_img_size so a fixed-size model (e.g. DINOv2 @ 518) accepts
+        # whatever resolution the pipeline feeds it; CNNs don't take the kwarg.
+        try:
+            self.backbone = timm.create_model(
+                backbone_name,
+                pretrained=pretrained,
+                num_classes=0,  # removes the default head
+                dynamic_img_size=True,
+            )
+        except TypeError:
+            self.backbone = timm.create_model(
+                backbone_name,
+                pretrained=pretrained,
+                num_classes=0,
+            )
         feature_dim = self.backbone.num_features
 
         # Custom head
